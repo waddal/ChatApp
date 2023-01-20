@@ -4,14 +4,17 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import {
   collection,
-  query,
-  orderBy,
-  limit,
   getFirestore,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  addDoc,
 } from "firebase/firestore";
 
 import { useAuthState } from "react-firebase-hooks/auth";
 import { useCollectionData } from "react-firebase-hooks/firestore";
+import { useRef, useState } from "react";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBtwh4x07sKUGYhP6nthW6pNc9BvS8PhkU",
@@ -23,7 +26,6 @@ const firebaseConfig = {
   measurementId: "G-MKL4BNKRGD",
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 const auth = getAuth(app);
@@ -33,9 +35,7 @@ function App() {
   const [user] = useAuthState(auth);
   return (
     <div className="App">
-      <header>
-        <SignOut />
-      </header>
+      <header>{user && <SignOut />}</header>
 
       <section>{user ? <ChatRoom /> : <SignIn />}</section>
     </div>
@@ -43,22 +43,72 @@ function App() {
 }
 
 function ChatMessage(props) {
-  const { text, uid } = props.message;
+  const { text, uid, photoURL } = props.message;
 
-  return <p>{text}</p>;
+  const messageClass = uid === auth.currentUser.uid ? "sent" : "recieved";
+
+  return (
+    <div className={`message ${messageClass}`}>
+      <img src={photoURL || 'https://randomuser.me/api/portraits/thumb/men/33.jpg'} alt="usrPhoto" />
+      <p>{text}</p>
+    </div>
+  );
 }
 
 function ChatRoom() {
+  const dummy = useRef();
+
   const messagesRef = collection(firestore, "messages");
   const q = query(messagesRef, orderBy("createdAt"), limit(25));
   const [messages] = useCollectionData(q, { idField: "id" });
 
+  const [formValue, setFormValue] = useState("");
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    const { uid, photoURL } = auth.currentUser;
+
+    const data = {
+      text: formValue,
+      createdAt: serverTimestamp(),
+      uid,
+      photoURL,
+    };
+
+    try {
+      addDoc(collection(firestore, "messages"), data);
+    } catch (e) {
+      console.log("error: ", e, "\nunable to send: ", {
+        text: formValue,
+        createdAt: serverTimestamp(),
+        uid,
+        photoURL,
+      });
+    }
+
+    setFormValue("");
+    dummy.current.scrollIntoView({ behavior: "smooth" });
+  };
+
   return (
     <>
-      <div>
+      <main>
         {messages &&
           messages.map((msg) => <ChatMessage key={msg.id} message={msg} />)}
-      </div>
+
+        <span ref={dummy}></span>
+      </main>
+
+      <form onSubmit={sendMessage}>
+        <input
+          type="text"
+          value={formValue}
+          onChange={(e) => setFormValue(e.target.value)}
+        />
+        <button type="submit" disabled={!formValue}>
+          🕊
+        </button>
+      </form>
     </>
   );
 }
@@ -73,7 +123,7 @@ function SignIn() {
 }
 
 function SignOut() {
-  return auth.user && <button onClick={() => auth.signOut()}>Sign Out</button>;
+  return <button onClick={() => auth.signOut()}>Sign Out</button>;
 }
 
 export default App;
